@@ -136,7 +136,7 @@ async function run() {
                 res.status(500).send(err)
             }
         })
-
+        // post a camp data
         app.post('/camps', async (req, res) => {
             try {
                 const newCamp = req.body;
@@ -196,8 +196,37 @@ async function run() {
                 res.status(500).send(error)
             }
         })
+        // update a camp data
+        app.put('/camps/:id', async (req, res) => {
+            try {
+                const id = req.params.id;
+                const updateData = req.body;
+                console.log(updateData);
+                const query = { _id: new ObjectId(id) }
+                const updateDoc = {
+                    $set: {
+                        ...updateData
+                    }
+                }
+                const result = await campsCollection.updateOne(query, updateDoc)
+                res.send(result)
+            } catch (error) {
+                res.status(500).send(error)
+            }
+        })
 
-        //    post a  camp participant registration
+
+        // delete a camp data
+        app.delete('/camps/:id', async (req, res) => {
+            try {
+                const id = req.params.id;
+                const result = await campsCollection.deleteOne({ _id: new ObjectId(id) })
+                res.send(result)
+            } catch (error) {
+                res.status(500).send(error)
+            }
+        })
+        //  post a  camp participant registration
         app.post('/camp-participant-registration', async (req, res) => {
             try {
                 const participantData = req.body;
