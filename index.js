@@ -4,6 +4,7 @@ const cors = require('cors')
 const cookieParser = require('cookie-parser')
 const jwt = require('jsonwebtoken')
 const morgan = require('morgan')
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const port = process.env.PORT || 5000
 const app = express()
@@ -19,7 +20,20 @@ app.use(express.json())
 app.use(cookieParser())
 app.use(morgan('dev'))
 
+const verifyToken = async (req, res, next) => {
+    const token = req.cookies?.token
+    if (!token) {
+        return res.status(401).send({ message: 'unauthorized access' })
+    }
 
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+            return res.status(401).send({ message: 'unauthorized access' })
+        }
+        req.user = decoded
+        next()
+    })
+}
 
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
@@ -45,20 +59,7 @@ async function run() {
 
 
 
-        const verifyToken = async (req, res, next) => {
-            const token = req.cookies?.token
-            if (!token) {
-                return res.status(401).send({ message: 'unauthorized access' })
-            }
 
-            jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-                if (err) {
-                    return res.status(401).send({ message: 'unauthorized access' })
-                }
-                req.user = decoded
-                next()
-            })
-        }
 
         const verifyOrganizer = async (req, res, next) => {
             const email = req.user.email
@@ -301,7 +302,7 @@ async function run() {
         })
 
         // get all registered-camps by email 
-        app.get('/registered-camps/:email', async (req, res) => {
+        app.get('/registered-camps/:email', verifyToken, async (req, res) => {
             const email = req.params.email;
             try {
                 const result = await campParticipantsCollection.aggregate(
@@ -335,6 +336,8 @@ async function run() {
             }
 
         })
+
+
         // increase/decrease a camp Participants data by id 
         app.patch('/camps/participant/:id', async (req, res) => {
             try {
@@ -422,6 +425,35 @@ async function run() {
             } catch (error) {
                 console.error("Error fetching resources:", error);
                 res.status(500).send({ error: "Internal server error" });
+            }
+        });
+
+        // create payment intent 
+        app.post('/create-payment-intent', verifyToken, async (req, res) => {
+            try {
+                const { campId } = req.body;
+                // console.log(campId);
+
+                // Find the camp
+                const camp = await campsCollection.findOne({ _id: new ObjectId(campId) });
+
+                // Check if the camp exists
+                if (!camp) {
+                    return res.status(400).send({ message: 'Camp Not Found' });
+                }
+
+                const stripeTotalPrice = camp.fees * 100;
+                const { client_secret } = await stripe.paymentIntents.create({
+                    amount: stripeTotalPrice,
+                    currency: 'usd',
+                    automatic_payment_methods: {
+                        enabled: true,
+                    },
+                });
+                res.send({ client_secret: client_secret });
+            } catch (error) {
+                console.error(error);
+                res.status(500).send({ message: 'Internal Server Error' });
             }
         });
 
