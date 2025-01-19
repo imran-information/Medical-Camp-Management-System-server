@@ -10,7 +10,7 @@ const app = express()
 
 // middleware
 const corsOptions = {
-    origin: ['http://localhost:5173',],
+    origin: ['http://localhost:5173'],
     credentials: true,
     optionSuccessStatus: 200,
 }
@@ -19,22 +19,7 @@ app.use(express.json())
 app.use(cookieParser())
 app.use(morgan('dev'))
 
-const verifyToken = async (req, res, next) => {
-    const token = req.cookies?.token
 
-    if (!token) {
-        return res.status(401).send({ message: 'unauthorized access' })
-    }
-
-    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-        if (err) {
-            console.log(err)
-            return res.status(401).send({ message: 'unauthorized access' })
-        }
-        req.user = decoded
-        next()
-    })
-}
 
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
@@ -57,6 +42,35 @@ async function run() {
         const campParticipantsCollection = db.collection('campParticipants')
         const feedbacksCollection = db.collection('feedbacks')
         const healthResourcesCollection = db.collection('healthResources')
+
+
+
+        const verifyToken = async (req, res, next) => {
+            const token = req.cookies?.token
+            if (!token) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+
+            jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+                if (err) {
+                    return res.status(401).send({ message: 'unauthorized access' })
+                }
+                req.user = decoded
+                next()
+            })
+        }
+
+        const verifyOrganizer = async (req, res, next) => {
+            const email = req.user.email
+            const query = { email: email }
+            const user = await usersCollection.findOne(query);
+            const isOrganizer = user.role === 'organizer';
+            if (!isOrganizer) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+
+            next()
+        }
 
         // Generate jwt token
         app.post('/jwt', async (req, res) => {
@@ -97,7 +111,7 @@ async function run() {
                     res.send({ message: 'user already exist' })
                     return;
                 }
-                const result = await usersCollection.insertOne({ ...newUser, role: 'customer', })
+                const result = await usersCollection.insertOne({ ...newUser, role: 'participant', })
                 res.send(result)
             } catch (err) {
                 res.status(500).send(err)
@@ -136,8 +150,29 @@ async function run() {
                 res.status(500).send(err)
             }
         })
+
+        // get organizer && check if user is organizer
+        app.get('/users/organizer/:email', verifyToken, async (req, res) => {
+            try {
+                const email = req.params.email;
+
+                if (email !== req.user.email) return res.status(401).send({ message: 'unauthorized access' })
+
+                const user = await usersCollection.findOne({ email: email });
+                console.log(user);
+                let organizer = false;
+                if (user.role === 'organizer') {
+                    organizer = true;
+                }
+                console.log(organizer)
+                res.send({ organizer })
+            } catch (err) {
+                res.status(500).send(err)
+            }
+        });
+
         // post a camp data
-        app.post('/camps', async (req, res) => {
+        app.post('/camps', verifyToken, verifyOrganizer, async (req, res) => {
             try {
                 const newCamp = req.body;
                 const result = await campsCollection.insertOne(newCamp);
@@ -197,7 +232,7 @@ async function run() {
             }
         })
         // update a camp data
-        app.put('/camps/:id', async (req, res) => {
+        app.put('/camps/:id', verifyToken, verifyOrganizer, async (req, res) => {
             try {
                 const id = req.params.id;
                 const updateData = req.body;
@@ -217,7 +252,7 @@ async function run() {
 
 
         // delete a camp data
-        app.delete('/camps/:id', async (req, res) => {
+        app.delete('/camps/:id', verifyToken, verifyOrganizer, async (req, res) => {
             try {
                 const id = req.params.id;
                 const result = await campsCollection.deleteOne({ _id: new ObjectId(id) })
@@ -232,6 +267,34 @@ async function run() {
                 const participantData = req.body;
                 // console.log(participantData);
                 const result = await campParticipantsCollection.insertOne(participantData);
+                res.send(result)
+            } catch (error) {
+                res.status(500).send(error)
+            }
+        })
+        // get all registered-camps
+        app.get('/registered-camps', async (req, res) => {
+            try {
+                const result = await campParticipantsCollection.aggregate(
+                    [
+                        {
+                            $addFields: {
+                                campId: { $toObjectId: '$campId' }
+                            }
+                        },
+                        {
+                            $lookup: {
+                                from: 'camps',
+                                localField: 'campId',
+                                foreignField: '_id',
+                                as: 'campData',
+                            },
+                        },
+                        {
+                            $unwind: '$campData',
+                        },
+                    ]
+                ).toArray()
                 res.send(result)
             } catch (error) {
                 res.status(500).send(error)
@@ -303,6 +366,16 @@ async function run() {
                 res.send(result);
             } catch (error) {
                 console.error("Error submitting feedback:", error);
+                res.status(500).send({ error: "Internal server error" });
+            }
+        });
+
+        // get all feedbacks for  camp
+        app.get('/feedbacks', async (req, res) => {
+            try {
+                const result = await feedbacksCollection.find().toArray();
+                res.send(result);
+            } catch (error) {
                 res.status(500).send({ error: "Internal server error" });
             }
         });
