@@ -155,16 +155,15 @@ async function run() {
         app.get('/users/organizer/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
-
                 if (email !== req.user.email) return res.status(401).send({ message: 'unauthorized access' })
 
                 const user = await usersCollection.findOne({ email: email });
-                console.log(user);
+                // console.log(user);
                 let organizer = false;
                 if (user.role === 'organizer') {
                     organizer = true;
                 }
-                console.log(organizer)
+                // console.log(organizer)
                 res.send({ organizer })
             } catch (err) {
                 res.status(500).send(err)
@@ -250,7 +249,6 @@ async function run() {
             }
         })
 
-
         // delete a camp data
         app.delete('/camps/:id', verifyToken, verifyOrganizer, async (req, res) => {
             try {
@@ -261,6 +259,7 @@ async function run() {
                 res.status(500).send(error)
             }
         })
+
         //  post a  camp participant registration
         app.post('/camp-participant-registration', async (req, res) => {
             try {
@@ -301,6 +300,41 @@ async function run() {
             }
         })
 
+        // get all registered-camps by email 
+        app.get('/registered-camps/:email', async (req, res) => {
+            const email = req.params.email;
+            try {
+                const result = await campParticipantsCollection.aggregate(
+                    [
+                        {
+                            $match: {
+                                participantEmail: email
+                            }
+                        },
+                        {
+                            $addFields: {
+                                campId: { $toObjectId: '$campId' }
+                            }
+                        },
+                        {
+                            $lookup: {
+                                from: 'camps',
+                                localField: 'campId',
+                                foreignField: '_id',
+                                as: 'campData',
+                            },
+                        },
+                        {
+                            $unwind: '$campData',
+                        },
+                    ]
+                ).toArray()
+                res.send(result)
+            } catch (error) {
+                res.status(500).send(error)
+            }
+
+        })
         // increase/decrease a camp Participants data by id 
         app.patch('/camps/participant/:id', async (req, res) => {
             try {
@@ -373,7 +407,7 @@ async function run() {
         // get all feedbacks for  camp
         app.get('/feedbacks', async (req, res) => {
             try {
-                const result = await feedbacksCollection.find().toArray();
+                const result = await feedbacksCollection.find().sort({ 'rating': -1 }).toArray();
                 res.send(result);
             } catch (error) {
                 res.status(500).send({ error: "Internal server error" });
