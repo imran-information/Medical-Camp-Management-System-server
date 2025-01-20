@@ -222,7 +222,7 @@ async function run() {
         })
 
         // get one camp data
-        app.get('/camps/:id', async (req, res) => {
+        app.get('/camps/:id', verifyToken, async (req, res) => {
             try {
                 const id = req.params.id;
                 const result = await campsCollection.findOne({ _id: new ObjectId(id) })
@@ -289,11 +289,16 @@ async function run() {
                 res.status(500).send(error)
             }
         })
-        // get all registered-camps
-        app.get('/registered-camps', async (req, res) => {
+        // get all payed  registered-camps only organizer  
+        app.get('/registered-camps', verifyToken, verifyOrganizer, async (req, res) => {
             try {
                 const result = await campParticipantsCollection.aggregate(
                     [
+                        {
+                            $match: {
+                                paymentStatus: "Paid"
+                            }
+                        },
                         {
                             $addFields: {
                                 campId: { $toObjectId: '$campId' }
@@ -380,24 +385,56 @@ async function run() {
                 res.status(500).send(err)
             }
         })
-        // update  a specific camp	Payment Status&Confirmation Status 
+        // update a specific user camp	Payment Status 
         app.patch('/registered-camp-status', verifyToken, async (req, res) => {
-            const { campId } = req.body;
+            const { campId, } = req.body;
+            // console.log(campId );
             const email = req.user.email;
             const participantCamp = await campParticipantsCollection.findOne({ campId: campId, participantEmail: email })
-            console.log(participantCamp);
+            // console.log(participantCamp);
             if (!participantCamp) {
-                return
+                return res.status(400).send({ message: "Registered Camp Id nul" })
             }
-            const updateDoc = {
+            let updateDoc = {
                 $set: {
                     confirmationStatus: "Processing",
                     paymentStatus: "Paid",
                 }
             }
             const updatedRegisteredCamp = await campParticipantsCollection.updateOne({ campId: campId }, updateDoc)
+            // console.log(updatedRegisteredCamp);
+            res.send(updatedRegisteredCamp)
+        })
+
+        // update  a specific registered camp  only organizer Confirmation Status 
+        app.patch('/registered-camp-status-organizer', verifyToken, verifyOrganizer, async (req, res) => {
+            const { campId, confirmationStatus, participantEmail } = req.body;
+            console.log(campId, confirmationStatus, participantEmail);
+            const participantCamp = await campParticipantsCollection.findOne({ _id: new ObjectId(campId), participantEmail: participantEmail })
+            console.log(participantCamp);
+            if (!participantCamp) {
+                return res.status(400).send({ message: "Registered Camp Id nul" })
+            }
+            let updateDoc = {}
+            if (confirmationStatus === 'Confirmed') {
+                updateDoc = {
+                    $set: {
+                        confirmationStatus: "Confirmed",
+
+                    }
+                }
+            }
+            const updatedRegisteredCamp = await campParticipantsCollection.updateOne({ _id: new ObjectId(campId) }, updateDoc)
             console.log(updatedRegisteredCamp);
             res.send(updatedRegisteredCamp)
+        })
+        // delete a specific camp only organizer 
+        app.delete('/registered-camp-delete-organizer/:id', verifyToken, verifyOrganizer, async (req, res) => {
+            const campId = req.params.id;
+            const result = await campParticipantsCollection.deleteOne({ _id: new ObjectId(campId) })
+            console.log(result);
+            res.send(result)
+
         })
 
         // delete a specific user registered camp 
@@ -409,6 +446,7 @@ async function run() {
             res.send(result)
 
         })
+
 
         // get feedback for a specific camp
         app.get('/feedbacks/:id', async (req, res) => {
@@ -434,7 +472,7 @@ async function run() {
             try {
                 const { campId, participantName, participantEmail, participantImage, rating, feedback, } = req.body;
                 const feedbackInfo = {
-                    campId: new ObjectId(campId),
+                    campId: campId,
                     participantName,
                     participantEmail,
                     participantImage,
