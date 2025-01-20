@@ -262,11 +262,28 @@ async function run() {
         })
 
         //  post a  camp participant registration
-        app.post('/camp-participant-registration', async (req, res) => {
+        app.post('/camp-participant-registration', verifyToken, async (req, res) => {
             try {
                 const participantData = req.body;
-                // console.log(participantData);
-                const result = await campParticipantsCollection.insertOne(participantData);
+                const email = participantData?.participantEmail;
+                const campId = participantData?.campId;
+                const exists = await campParticipantsCollection.findOne({ participantEmail: email, campId: campId })
+                if (exists) {
+                    return res.status(400).send({ message: 'Already Registered this camp' })
+                }
+
+                const participantCurrent = {
+                    age: participantData.age,
+                    phoneNumber: participantData.phoneNumber,
+                    gender: participantData.gender,
+                    emergencyContact: participantData.emergencyContact,
+                    participantName: participantData.participantName,
+                    participantEmail: participantData.participantEmail,
+                    campId: participantData.campId,
+                    confirmationStatus: 'Pending',
+                    paymentStatus: 'Pay',
+                }
+                const result = await campParticipantsCollection.insertOne(participantCurrent);
                 res.send(result)
             } catch (error) {
                 res.status(500).send(error)
@@ -339,32 +356,59 @@ async function run() {
 
 
         // increase/decrease a camp Participants data by id 
-        app.patch('/camps/participant/:id', async (req, res) => {
+        app.patch('/camps/participant/:id', verifyToken, async (req, res) => {
             try {
                 const id = req.params.id;
-                console.log(id);
-                // const { updatedQuantity } = req.body;
-                // // console.log(updatedQuantity);
+                const { status } = req.body;
+                console.log(id, status);
                 const query = { _id: new ObjectId(id) }
                 let updateDoc = {
                     $inc: {
                         participantCount: +1
                     },
                 }
-                // if (status === 'increase') {
-                //     updateDoc = {
-                //         $inc: {
-                //             quantity: updatedQuantity
-                //         },
-                //     }
-                // }
+                if (status === 'decrease') {
+                    updateDoc = {
+                        $inc: {
+                            participantCount: -1
+                        },
+                    }
+                }
                 const result = await campsCollection.updateOne(query, updateDoc)
                 res.send(result)
             } catch (err) {
                 res.status(500).send(err)
             }
         })
+        // update  a specific camp	Payment Status&Confirmation Status 
+        app.patch('/registered-camp-status', verifyToken, async (req, res) => {
+            const { campId } = req.body;
+            const email = req.user.email;
+            const participantCamp = await campParticipantsCollection.findOne({ campId: campId, participantEmail: email })
+            console.log(participantCamp);
+            if (!participantCamp) {
+                return
+            }
+            const updateDoc = {
+                $set: {
+                    confirmationStatus: "Processing",
+                    paymentStatus: "Paid",
+                }
+            }
+            const updatedRegisteredCamp = await campParticipantsCollection.updateOne({ campId: campId }, updateDoc)
+            console.log(updatedRegisteredCamp);
+            res.send(updatedRegisteredCamp)
+        })
 
+        // delete a specific user registered camp 
+        app.delete('/registered-camp-delete/:campId', verifyToken, async (req, res) => {
+            const email = req.user.email;
+            const campId = req.params.campId;
+            const result = await campParticipantsCollection.deleteOne({ campId: campId, participantEmail: email })
+            console.log(result);
+            res.send(result)
+
+        })
 
         // get feedback for a specific camp
         app.get('/feedbacks/:id', async (req, res) => {
@@ -456,6 +500,7 @@ async function run() {
                 res.status(500).send({ message: 'Internal Server Error' });
             }
         });
+
 
 
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
