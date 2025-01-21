@@ -195,31 +195,35 @@ async function run() {
         app.get('/all-camps', async (req, res) => {
             try {
                 const { search, sort } = req.query;
-                console.log(sort);
-                let query = {}
+                console.log(search);
+                let query = {};
                 if (search) {
                     query = {
                         $or: [
                             { name: { $regex: search, $options: 'i' } },
                             { location: { $regex: search, $options: 'i' } },
+                            { date: { $regex: search, $options: 'i' } },
+                            { healthcareProfessional: { $regex: search, $options: 'i' } },
                         ],
                     };
                 }
 
-                let camps = await campsCollection.find(query).toArray()
-
+                let sortOption = {};
                 if (sort === 'participantCount') {
-                    camps = camps.sort((a, b) => b.participantCount - a.participantCount);
+                    sortOption = { participantCount: -1 }; // Descending by participantCount
                 } else if (sort === 'fees') {
-                    camps = camps.sort((a, b) => a.fees - b.fees);
+                    sortOption = { fees: 1 }; // Ascending by fees
                 } else if (sort === 'alphabetical') {
-                    camps = camps.sort((a, b) => a.name.localeCompare(b.name));
+                    sortOption = { name: 1 }; // Alphabetical order (ascending)
                 }
-                res.send(camps)
+                const camps = await campsCollection.find(query).sort(sortOption).toArray();
+                res.send(camps);
             } catch (error) {
-                res.status(500).send(error)
+                console.error('Error fetching camps:', error);
+                res.status(500).send({ error: 'Failed to fetch camps' });
             }
-        })
+        });
+
 
         // get one camp data
         app.get('/camps/:id', verifyToken, async (req, res) => {
@@ -292,36 +296,51 @@ async function run() {
         // get all payed  registered-camps only organizer  
         app.get('/registered-camps', verifyToken, verifyOrganizer, async (req, res) => {
             try {
-                const result = await campParticipantsCollection.aggregate(
-                    [
-                        {
-                            $match: {
-                                paymentStatus: "Paid"
-                            }
+                const { search } = req.query;
+                // console.log(search);
+                let searchQuery = {};
+                if (search) {
+                    searchQuery = {
+                        $or: [
+                            { participantName: { $regex: search, $options: 'i' } }, // Participant name
+                            { confirmationStatus: { $regex: search, $options: 'i' } }, // confirmationStatus status
+                           
+                        ],
+                    };
+                }
+                const result = await campParticipantsCollection.aggregate([
+                    {
+                        $match: {
+                            paymentStatus: "Paid",
+                            ...searchQuery, 
                         },
-                        {
-                            $addFields: {
-                                campId: { $toObjectId: '$campId' }
-                            }
+                    },
+                    {
+                        $addFields: {
+                            campId: { $toObjectId: '$campId' }, 
                         },
-                        {
-                            $lookup: {
-                                from: 'camps',
-                                localField: 'campId',
-                                foreignField: '_id',
-                                as: 'campData',
-                            },
+                    },
+                    {
+                        $lookup: {
+                            from: 'camps', 
+                            localField: 'campId', 
+                            foreignField: '_id', 
+                            as: 'campData', 
                         },
-                        {
-                            $unwind: '$campData',
-                        },
-                    ]
-                ).toArray()
-                res.send(result)
+                    },
+                    {
+                        $unwind: '$campData', 
+                    },
+                ]).toArray();
+
+                res.send(result);
             } catch (error) {
-                res.status(500).send(error)
+                console.error("Error retrieving registered camps:", error);
+                res.status(500).send(error); // Return a 500 error response in case of an issue
             }
-        })
+        });
+
+
 
         // get all registered-camps by email 
         app.get('/registered-camps/:email', verifyToken, async (req, res) => {
@@ -449,7 +468,7 @@ async function run() {
 
 
         // get feedback for a specific camp
-        app.get('/feedbacks/:id', async (req, res) => {
+        app.get('/feedbacks/:id', verifyToken, async (req, res) => {
             try {
                 const campId = req.params.id;
                 if (!ObjectId.isValid(campId)) {
@@ -468,7 +487,7 @@ async function run() {
         });
 
         // Add feedback for a camp
-        app.post('/feedbacks', async (req, res) => {
+        app.post('/feedbacks', verifyToken, async (req, res) => {
             try {
                 const { campId, participantName, participantEmail, participantImage, rating, feedback, } = req.body;
                 const feedbackInfo = {
