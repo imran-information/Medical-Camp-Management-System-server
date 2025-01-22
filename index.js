@@ -56,11 +56,7 @@ async function run() {
         const campParticipantsCollection = db.collection('campParticipants')
         const feedbacksCollection = db.collection('feedbacks')
         const healthResourcesCollection = db.collection('healthResources')
-
-
-
-
-
+ 
         const verifyOrganizer = async (req, res, next) => {
             const email = req.user.email
             const query = { email: email }
