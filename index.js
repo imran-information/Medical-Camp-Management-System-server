@@ -228,6 +228,35 @@ async function run() {
             }
         });
 
+        // get all camp data Only organizer 
+        app.get('/all-camps-organizer', verifyToken, verifyOrganizer, async (req, res) => {
+            try {
+                const { search, sort, page, size } = req.query;
+                const perPage = parseInt(page);
+                const dataSize = parseInt(size);
+
+                let query = {};
+                if (search) {
+                    query = {
+                        $or: [
+                            { name: { $regex: search, $options: 'i' } },
+                            { location: { $regex: search, $options: 'i' } },
+                            { date: { $regex: search, $options: 'i' } },
+                            { healthcareProfessional: { $regex: search, $options: 'i' } },
+                        ],
+                    };
+                }
+
+                let sortOption = { date: -1 };
+                const campCount = await campsCollection.estimatedDocumentCount()
+                console.log(campCount);
+                const camps = await campsCollection.find(query).sort(sortOption).skip(perPage * dataSize).limit(dataSize).toArray();
+                res.send({ allCamp: camps, campCount: campCount });
+            } catch (error) {
+                console.error('Error fetching camps:', error);
+                res.status(500).send({ error: 'Failed to fetch camps' });
+            }
+        });
 
         // get one camp data
         app.get('/camps/:id', verifyToken, async (req, res) => {
@@ -300,8 +329,10 @@ async function run() {
         // get all payed  registered-camps only organizer  
         app.get('/registered-camps', verifyToken, verifyOrganizer, async (req, res) => {
             try {
-                const { search } = req.query;
+                const { search, page, size } = req.query;
                 // console.log(search);
+                const perPage = parseInt(page);
+                const dataSize = parseInt(size);
                 let searchQuery = {};
                 if (search) {
                     searchQuery = {
@@ -312,6 +343,7 @@ async function run() {
                         ],
                     };
                 }
+                const campParticipantCount = await campParticipantsCollection.estimatedDocumentCount()
                 const result = await campParticipantsCollection.aggregate([
                     {
                         $match: {
@@ -335,9 +367,9 @@ async function run() {
                     {
                         $unwind: '$campData',
                     },
-                ]).toArray();
+                ]).skip(perPage * dataSize).limit(dataSize).toArray();
 
-                res.send(result);
+                res.send({ campParticipant: result, campParticipantCount: campParticipantCount });
             } catch (error) {
                 console.error("Error retrieving registered camps:", error);
                 res.status(500).send(error); // Return a 500 error response in case of an issue
