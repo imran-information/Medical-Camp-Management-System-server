@@ -11,7 +11,7 @@ const app = express()
 
 // middleware
 const corsOptions = {
-    origin: ['http://localhost:5173'],
+    origin: ['http://localhost:5173', 'https://medical-camp-management-1b67d.web.app'],
     credentials: true,
     optionSuccessStatus: 200,
 }
@@ -56,7 +56,7 @@ async function run() {
         const campParticipantsCollection = db.collection('campParticipants')
         const feedbacksCollection = db.collection('feedbacks')
         const healthResourcesCollection = db.collection('healthResources')
- 
+
         const verifyOrganizer = async (req, res, next) => {
             const email = req.user.email
             const query = { email: email }
