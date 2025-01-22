@@ -194,8 +194,10 @@ async function run() {
         // get all  camp data
         app.get('/all-camps', async (req, res) => {
             try {
-                const { search, sort } = req.query;
-                console.log(search);
+                const { search, sort, page, size } = req.query;
+                const perPage = parseInt(page);
+                const dataSize = parseInt(size);
+
                 let query = {};
                 if (search) {
                     query = {
@@ -216,8 +218,10 @@ async function run() {
                 } else if (sort === 'alphabetical') {
                     sortOption = { name: 1 }; // Alphabetical order (ascending)
                 }
-                const camps = await campsCollection.find(query).sort(sortOption).toArray();
-                res.send(camps);
+                const campCount = await campsCollection.estimatedDocumentCount()
+                console.log(campCount);
+                const camps = await campsCollection.find(query).sort(sortOption).skip(perPage * dataSize).limit(dataSize).toArray();
+                res.send({ allCamp: camps, campCount: campCount });
             } catch (error) {
                 console.error('Error fetching camps:', error);
                 res.status(500).send({ error: 'Failed to fetch camps' });
@@ -304,7 +308,7 @@ async function run() {
                         $or: [
                             { participantName: { $regex: search, $options: 'i' } }, // Participant name
                             { confirmationStatus: { $regex: search, $options: 'i' } }, // confirmationStatus status
-                           
+
                         ],
                     };
                 }
@@ -312,24 +316,24 @@ async function run() {
                     {
                         $match: {
                             paymentStatus: "Paid",
-                            ...searchQuery, 
+                            ...searchQuery,
                         },
                     },
                     {
                         $addFields: {
-                            campId: { $toObjectId: '$campId' }, 
+                            campId: { $toObjectId: '$campId' },
                         },
                     },
                     {
                         $lookup: {
-                            from: 'camps', 
-                            localField: 'campId', 
-                            foreignField: '_id', 
-                            as: 'campData', 
+                            from: 'camps',
+                            localField: 'campId',
+                            foreignField: '_id',
+                            as: 'campData',
                         },
                     },
                     {
-                        $unwind: '$campData', 
+                        $unwind: '$campData',
                     },
                 ]).toArray();
 
