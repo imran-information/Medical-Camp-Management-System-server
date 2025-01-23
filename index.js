@@ -339,8 +339,8 @@ async function run() {
                         ],
                     };
                 }
-                const options = { confirmationStatus: "Processing", }
-                const campParticipantCount = await campParticipantsCollection.estimatedDocumentCount(options)
+                const options = { paymentStatus: "Paid" }
+                const campParticipantCount = await campParticipantsCollection.countDocuments(options)
                 const result = await campParticipantsCollection.aggregate([
                     {
                         $match: {
