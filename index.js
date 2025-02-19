@@ -554,7 +554,7 @@ async function run() {
         // Fetch all health resources
         app.get('/resources', async (req, res) => {
             try {
-                const resources = await healthResourcesCollection.find({}).sort({ date: -1 }).toArray();
+                const resources = await healthResourcesCollection.find().sort({ date: -1 }).limit(8).toArray();
                 res.send(resources);
             } catch (error) {
                 console.error("Error fetching resources:", error);
