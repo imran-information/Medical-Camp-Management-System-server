@@ -4,14 +4,13 @@ const cors = require('cors')
 const cookieParser = require('cookie-parser')
 const jwt = require('jsonwebtoken')
 const morgan = require('morgan')
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const port = process.env.PORT || 5000
 const app = express()
 
 // middleware
 const corsOptions = {
-    origin: ['http://localhost:5173', 'https://medical-camp-management-1b67d.web.app'],
+    origin: ['http://localhost:5173', 'https://task-management-applicat-c04f4.web.app'],
     credentials: true,
     optionSuccessStatus: 200,
 }
@@ -50,24 +49,9 @@ const client = new MongoClient(uri, {
 
 async function run() {
     try {
-        const db = client.db('mcms')
+        const db = client.db('task-management')
         const usersCollection = db.collection('users')
-        const campsCollection = db.collection('camps')
-        const campParticipantsCollection = db.collection('campParticipants')
-        const feedbacksCollection = db.collection('feedbacks')
-        const healthResourcesCollection = db.collection('healthResources')
-
-        const verifyOrganizer = async (req, res, next) => {
-            const email = req.user.email
-            const query = { email: email }
-            const user = await usersCollection.findOne(query);
-            const isOrganizer = user.role === 'organizer';
-            if (!isOrganizer) {
-                return res.status(401).send({ message: 'unauthorized access' })
-            }
-
-            next()
-        }
+        const tasksCollection = db.collection('tasks')
 
         // Generate jwt token
         app.post('/jwt', async (req, res) => {
@@ -108,7 +92,7 @@ async function run() {
                     res.send({ message: 'user already exist' })
                     return;
                 }
-                const result = await usersCollection.insertOne({ ...newUser, role: 'participant', })
+                const result = await usersCollection.insertOne({ ...newUser, role: 'user', })
                 res.send(result)
             } catch (err) {
                 res.status(500).send(err)
@@ -148,449 +132,69 @@ async function run() {
             }
         })
 
-        // get organizer && check if user is organizer
-        app.get('/users/organizer/:email', verifyToken, async (req, res) => {
+        // post a task data
+        app.post('/tasks', async (req, res) => {
             try {
-                const email = req.params.email;
-                if (email !== req.user.email) return res.status(401).send({ message: 'unauthorized access' })
-
-                const user = await usersCollection.findOne({ email: email });
-                // console.log(user);
-                let organizer = false;
-                if (user.role === 'organizer') {
-                    organizer = true;
-                }
-                // console.log(organizer)
-                res.send({ organizer })
-            } catch (err) {
-                res.status(500).send(err)
-            }
-        });
-
-        // post a camp data
-        app.post('/camps', verifyToken, verifyOrganizer, async (req, res) => {
-            try {
-                const newCamp = req.body;
-                const result = await campsCollection.insertOne(newCamp);
+                const newTask = req.body;
+                const result = await tasksCollection.insertOne(newTask);
                 res.send(result)
             } catch (error) {
                 res.status(500).send(error)
             }
         })
 
-        // get popular 8 camp data
-        app.get('/camps', async (req, res) => {
+        // // get all  task data
+        app.get('/all-task', async (req, res) => {
             try {
-                const result = await campsCollection.find().sort({ 'participantCount': -1 }).limit(6).toArray()
-                res.send(result)
+                const { email } = req.query
+                const tasks = await tasksCollection.find({ email: email }).toArray()
+                res.send(tasks)
             } catch (error) {
-                res.status(500).send(error)
-            }
-        })
-        // get all  camp data
-        app.get('/all-camps', async (req, res) => {
-            try {
-                const { search, sort, page, size } = req.query;
-                const perPage = parseInt(page);
-                const dataSize = parseInt(size);
+                console.error('Error fetching tasks:', error);
 
-                let query = {};
-                if (search) {
-                    query = {
-                        $or: [
-                            { name: { $regex: search, $options: 'i' } },
-                            { location: { $regex: search, $options: 'i' } },
-                            { date: { $regex: search, $options: 'i' } },
-                            { healthcareProfessional: { $regex: search, $options: 'i' } },
-                        ],
-                    };
-                }
-
-                let sortOption = {};
-                if (sort === 'participantCount') {
-                    sortOption = { participantCount: -1 }; // Descending by participantCount
-                } else if (sort === 'fees') {
-                    sortOption = { fees: 1 }; // Ascending by fees
-                } else if (sort === 'alphabetical') {
-                    sortOption = { name: 1 }; // Alphabetical order (ascending)
-                }
-                const campCount = await campsCollection.estimatedDocumentCount()
-                console.log(campCount);
-                const camps = await campsCollection.find(query).sort(sortOption).skip(perPage * dataSize).limit(dataSize).toArray();
-                res.send({ allCamp: camps, campCount: campCount });
-            } catch (error) {
-                console.error('Error fetching camps:', error);
-                res.status(500).send({ error: 'Failed to fetch camps' });
             }
         });
 
-        // get all camp data Only organizer 
-        app.get('/all-camps-organizer', verifyToken, verifyOrganizer, async (req, res) => {
-            try {
-                const { search, sort, page, size } = req.query;
-                const perPage = parseInt(page);
-                const dataSize = parseInt(size);
-
-                let query = {};
-                if (search) {
-                    query = {
-                        $or: [
-                            { name: { $regex: search, $options: 'i' } },
-                            { location: { $regex: search, $options: 'i' } },
-                            { date: { $regex: search, $options: 'i' } },
-                            { healthcareProfessional: { $regex: search, $options: 'i' } },
-                        ],
-                    };
-                }
-
-                let sortOption = { date: -1 };
-                const campCount = await campsCollection.estimatedDocumentCount()
-                console.log(campCount);
-                const camps = await campsCollection.find(query).sort(sortOption).skip(perPage * dataSize).limit(dataSize).toArray();
-                res.send({ allCamp: camps, campCount: campCount });
-            } catch (error) {
-                console.error('Error fetching camps:', error);
-                res.status(500).send({ error: 'Failed to fetch camps' });
-            }
-        });
-
-        // get one camp data
-        app.get('/camps/:id', verifyToken, async (req, res) => {
+        // get one task data
+        app.get('/tasks/:id', async (req, res) => {
             try {
                 const id = req.params.id;
-                const result = await campsCollection.findOne({ _id: new ObjectId(id) })
+                const result = await tasksCollection.findOne({ _id: new ObjectId(id) })
                 res.send(result)
             } catch (error) {
                 res.status(500).send(error)
             }
         })
-        // update a camp data
-        app.put('/camps/:id', verifyToken, verifyOrganizer, async (req, res) => {
+
+        // Update task category based on the task ID
+        app.put('/tasks/:id', async (req, res) => {
             try {
                 const id = req.params.id;
                 const updateData = req.body;
-                console.log(updateData);
-                const query = { _id: new ObjectId(id) }
+                const query = { _id: new ObjectId(id) };
                 const updateDoc = {
                     $set: {
-                        ...updateData
+                        ...updateData, // update task category and other fields
                     }
-                }
-                const result = await campsCollection.updateOne(query, updateDoc)
-                res.send(result)
-            } catch (error) {
-                res.status(500).send(error)
-            }
-        })
-
-        // delete a camp data
-        app.delete('/camps/:id', verifyToken, verifyOrganizer, async (req, res) => {
-            try {
-                const id = req.params.id;
-                const result = await campsCollection.deleteOne({ _id: new ObjectId(id) })
-                res.send(result)
-            } catch (error) {
-                res.status(500).send(error)
-            }
-        })
-
-        //  post a  camp participant registration
-        app.post('/camp-participant-registration', verifyToken, async (req, res) => {
-            try {
-                const participantData = req.body;
-                const email = participantData?.participantEmail;
-                const campId = participantData?.campId;
-                const exists = await campParticipantsCollection.findOne({ participantEmail: email, campId: campId })
-                if (exists) {
-                    return res.status(400).send({ message: 'Already Registered this camp' })
-                }
-
-                const participantCurrent = {
-                    age: participantData.age,
-                    phoneNumber: participantData.phoneNumber,
-                    gender: participantData.gender,
-                    emergencyContact: participantData.emergencyContact,
-                    participantName: participantData.participantName,
-                    participantEmail: participantData.participantEmail,
-                    campId: participantData.campId,
-                    confirmationStatus: 'Pending',
-                    paymentStatus: 'Pay',
-                }
-                const result = await campParticipantsCollection.insertOne(participantCurrent);
-                res.send(result)
-            } catch (error) {
-                res.status(500).send(error)
-            }
-        })
-        // get all payed  registered-camps only organizer  
-        app.get('/registered-camps', verifyToken, verifyOrganizer, async (req, res) => {
-            try {
-                const { search, page, size } = req.query;
-                // console.log(search);
-                const perPage = parseInt(page);
-                const dataSize = parseInt(size);
-                let searchQuery = {};
-                if (search) {
-                    searchQuery = {
-                        $or: [
-                            { participantName: { $regex: search, $options: 'i' } }, // Participant name
-                            { confirmationStatus: { $regex: search, $options: 'i' } }, // confirmationStatus status
-
-                        ],
-                    };
-                }
-                const options = { paymentStatus: "Paid" }
-                const campParticipantCount = await campParticipantsCollection.countDocuments(options)
-                const result = await campParticipantsCollection.aggregate([
-                    {
-                        $match: {
-                            paymentStatus: "Paid",
-                            ...searchQuery,
-                        },
-                    },
-                    {
-                        $addFields: {
-                            campId: { $toObjectId: '$campId' },
-                        },
-                    },
-                    {
-                        $lookup: {
-                            from: 'camps',
-                            localField: 'campId',
-                            foreignField: '_id',
-                            as: 'campData',
-                        },
-                    },
-                    {
-                        $unwind: '$campData',
-                    },
-                ]).skip(perPage * dataSize).limit(dataSize).toArray();
-
-                res.send({ campParticipant: result, campParticipantCount: campParticipantCount });
-            } catch (error) {
-                console.error("Error retrieving registered camps:", error);
-                res.status(500).send(error); // Return a 500 error response in case of an issue
-            }
-        });
-
-
-
-        // get all registered-camps by email 
-        app.get('/registered-camps/:email', verifyToken, async (req, res) => {
-            const email = req.params.email;
-            try {
-                const result = await campParticipantsCollection.aggregate(
-                    [
-                        {
-                            $match: {
-                                participantEmail: email
-                            }
-                        },
-                        {
-                            $addFields: {
-                                campId: { $toObjectId: '$campId' }
-                            }
-                        },
-                        {
-                            $lookup: {
-                                from: 'camps',
-                                localField: 'campId',
-                                foreignField: '_id',
-                                as: 'campData',
-                            },
-                        },
-                        {
-                            $unwind: '$campData',
-                        },
-                    ]
-                ).toArray()
-                res.send(result)
-            } catch (error) {
-                res.status(500).send(error)
-            }
-
-        })
-
-
-        // increase/decrease a camp Participants data by id 
-        app.patch('/camps/participant/:id', verifyToken, async (req, res) => {
-            try {
-                const id = req.params.id;
-                const { status } = req.body;
-                console.log(id, status);
-                const query = { _id: new ObjectId(id) }
-                let updateDoc = {
-                    $inc: {
-                        participantCount: +1
-                    },
-                }
-                if (status === 'decrease') {
-                    updateDoc = {
-                        $inc: {
-                            participantCount: -1
-                        },
-                    }
-                }
-                const result = await campsCollection.updateOne(query, updateDoc)
-                res.send(result)
-            } catch (err) {
-                res.status(500).send(err)
-            }
-        })
-        // update a specific user camp	Payment Status 
-        app.patch('/registered-camp-status', verifyToken, async (req, res) => {
-            const { campId, } = req.body;
-            // console.log(campId );
-            const email = req.user.email;
-            const participantCamp = await campParticipantsCollection.findOne({ campId: campId, participantEmail: email })
-            // console.log(participantCamp);
-            if (!participantCamp) {
-                return res.status(400).send({ message: "Registered Camp Id nul" })
-            }
-            let updateDoc = {
-                $set: {
-                    confirmationStatus: "Processing",
-                    paymentStatus: "Paid",
-                }
-            }
-            const updatedRegisteredCamp = await campParticipantsCollection.updateOne({ campId: campId }, updateDoc)
-            // console.log(updatedRegisteredCamp);
-            res.send(updatedRegisteredCamp)
-        })
-
-        // update  a specific registered camp  only organizer Confirmation Status 
-        app.patch('/registered-camp-status-organizer', verifyToken, verifyOrganizer, async (req, res) => {
-            const { campId, confirmationStatus, participantEmail } = req.body;
-            console.log(campId, confirmationStatus, participantEmail);
-            const participantCamp = await campParticipantsCollection.findOne({ _id: new ObjectId(campId), participantEmail: participantEmail })
-            console.log(participantCamp);
-            if (!participantCamp) {
-                return res.status(400).send({ message: "Registered Camp Id nul" })
-            }
-            let updateDoc = {}
-            if (confirmationStatus === 'Confirmed') {
-                updateDoc = {
-                    $set: {
-                        confirmationStatus: "Confirmed",
-
-                    }
-                }
-            }
-            const updatedRegisteredCamp = await campParticipantsCollection.updateOne({ _id: new ObjectId(campId) }, updateDoc)
-            console.log(updatedRegisteredCamp);
-            res.send(updatedRegisteredCamp)
-        })
-        // delete a specific camp only organizer 
-        app.delete('/registered-camp-delete-organizer/:id', verifyToken, verifyOrganizer, async (req, res) => {
-            const campId = req.params.id;
-            const result = await campParticipantsCollection.deleteOne({ _id: new ObjectId(campId) })
-            console.log(result);
-            res.send(result)
-
-        })
-
-        // delete a specific user registered camp 
-        app.delete('/registered-camp-delete/:campId', verifyToken, async (req, res) => {
-            const email = req.user.email;
-            const campId = req.params.campId;
-            const result = await campParticipantsCollection.deleteOne({ campId: campId, participantEmail: email })
-            console.log(result);
-            res.send(result)
-
-        })
-
-
-        // get feedback for a specific camp
-        app.get('/feedbacks/:id', verifyToken, async (req, res) => {
-            try {
-                const campId = req.params.id;
-                if (!ObjectId.isValid(campId)) {
-                    return res.status(400).send({ error: "Invalid camp ID format" });
-                }
-                const feedbacks = await feedbacksCollection
-                    .find({ campId: new ObjectId(campId) })
-                    .sort({ date: -1 },)
-                    .toArray();
-
-                res.status(200).send(feedbacks);
-            } catch (error) {
-                console.error("Error fetching feedback:", error);
-                res.status(500).send({ error: "Internal server error" });
-            }
-        });
-
-        // Add feedback for a camp
-        app.post('/feedbacks', verifyToken, async (req, res) => {
-            try {
-                const { campId, participantName, participantEmail, participantImage, rating, feedback, } = req.body;
-                const feedbackInfo = {
-                    campId: campId,
-                    participantName,
-                    participantEmail,
-                    participantImage,
-                    rating: parseInt(rating),
-                    feedback,
-                    date: new Date().toLocaleDateString("en-CA"),
                 };
 
-                const result = await feedbacksCollection.insertOne(feedbackInfo);
+                const result = await tasksCollection.updateOne(query, updateDoc);
                 res.send(result);
             } catch (error) {
-                console.error("Error submitting feedback:", error);
-                res.status(500).send({ error: "Internal server error" });
+                res.status(500).send(error);
             }
         });
-
-        // get all feedbacks for  camp
-        app.get('/feedbacks', async (req, res) => {
+        
+        // delete a task data
+        app.delete('/tasks/:id', async (req, res) => {
             try {
-                const result = await feedbacksCollection.find().sort({ 'rating': -1 }).toArray();
-                res.send(result);
+                const id = req.params.id;
+                const result = await tasksCollection.deleteOne({ _id: new ObjectId(id) })
+                res.send(result)
             } catch (error) {
-                res.status(500).send({ error: "Internal server error" });
+                res.status(500).send(error)
             }
-        });
-
-        // Fetch all health resources
-        app.get('/resources', async (req, res) => {
-            try {
-                const resources = await healthResourcesCollection.find().sort({ date: -1 }).limit(8).toArray();
-                res.send(resources);
-            } catch (error) {
-                console.error("Error fetching resources:", error);
-                res.status(500).send({ error: "Internal server error" });
-            }
-        });
-
-        // create payment intent 
-        app.post('/create-payment-intent', verifyToken, async (req, res) => {
-            try {
-                const { campId } = req.body;
-                // console.log(campId);
-
-                // Find the camp
-                const camp = await campsCollection.findOne({ _id: new ObjectId(campId) });
-
-                // Check if the camp exists
-                if (!camp) {
-                    return res.status(400).send({ message: 'Camp Not Found' });
-                }
-
-                const stripeTotalPrice = camp.fees * 100;
-                const { client_secret } = await stripe.paymentIntents.create({
-                    amount: stripeTotalPrice,
-                    currency: 'usd',
-                    automatic_payment_methods: {
-                        enabled: true,
-                    },
-                });
-                res.send({ client_secret: client_secret });
-            } catch (error) {
-                console.error(error);
-                res.status(500).send({ message: 'Internal Server Error' });
-            }
-        });
-
+        })
 
 
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
@@ -602,9 +206,9 @@ run().catch(console.dir);
 
 
 app.get('/', (req, res) => {
-    res.send('Hello brother this is Medical Camp Server..')
+    res.send('Hello brother this is Task Management Server..')
 })
 
 app.listen(port, () => {
-    console.log(`Camp is running on port ${port}`)
+    console.log(`Task Management is running on port ${port}`)
 })
