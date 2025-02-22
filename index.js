@@ -83,7 +83,7 @@ async function run() {
                 })
                 .send({ success: true })
         })
-        // Logout
+        // Logout user
         app.get('/logout', async (req, res) => {
             try {
                 res
